@@ -1,0 +1,225 @@
+---
+title: "Machine learning - HF1"
+author: "Viviane Schneider"
+date: "7 de fevereiro de 2020"
+data: "Sociology Group - HF1 Project"
+output: 
+  html_document: 
+    highlight: zenburn
+    keep_md: yes
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,  cache = TRUE)
+setwd("~/Machine learning")
+```
+
+# Study context
+
+This is 
+
+# Data Sources
+
+You can 
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+# The study goal
+
+
+# Lybraries
+```{r}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+
+```
+
+
+# Get and read data
+
+setwd("~/GitHub/Practical-Machine-Learning-Johns-Hopkins-Bloomberg-School-of-Public-Health-Coursera/Project")
+
+
+```{r read in github}
+
+
+
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+rm(trainUrl)
+rm(testUrl)
+
+##Reading
+
+trainRaw <- read.csv(trainFile)
+testRaw <- read.csv(testFile)
+dim(trainRaw)
+
+
+```
+
+# Cleaning
+
+```{r}
+##  clean the Near Zero Variance Variables.
+NZV <- nearZeroVar(trainRaw, saveMetrics = TRUE)
+head(NZV, 20)
+
+
+
+training01 <- trainRaw[, !NZV$nzv]
+testing01 <- testRaw[, !NZV$nzv]
+dim(training01)
+
+
+rm(trainRaw)
+rm(testRaw)
+rm(NZV)
+
+## Removing some columns of the dataset that do not contribute much to the accelerometer measurements.
+
+regex <- grepl("^X|timestamp|user_name", names(training01))
+training <- training01[, !regex]
+testing <- testing01[, !regex]
+rm(regex)
+rm(training01)
+rm(testing01)
+dim(training)
+
+##Removing columns that contain NA's.
+
+cond <- (colSums(is.na(training)) == 0)
+training <- training[, cond]
+testing <- testing[, cond]
+rm(cond)
+
+
+```
+
+# Correlation
+
+```{r}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+
+```
+
+
+
+# Partitioning Training Set
+
+```{r}
+set.seed(56789) # For reproducibile purpose
+inTrain <- createDataPartition(training$classe, p = 0.70, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+rm(inTrain)
+
+```
+
+
+# Data modeling
+
+## Decision Tree
+
+fit a predictive model for activity recognition using Decision Tree algorithm.
+
+```{r}
+modelTree <- rpart(classe ~ ., data = training, method = "class")
+prp(modelTree)
+
+```
+
+
+estimate the performance of the model on the validation data set.
+
+```{r}
+predictTree <- predict(modelTree, validation, type = "class")
+confusionMatrix(validation$classe, predictTree)
+
+accuracy <- postResample(predictTree, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictTree)$overall[1])
+rm(predictTree)
+rm(modelTree)
+
+
+```
+
+## Random Forest
+
+fit a predictive model for activity recognition using Random Forest algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general.
+We will use 5-fold cross validation when applying the algorithm.
+
+```{r}
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+modelRF
+
+```
+
+ estimate the performance of the model on the validation data set.
+ 
+```{r}
+predictRF <- predict(modelRF, validation)
+confusionMatrix(validation$classe, predictRF)
+
+
+accuracy <- postResample(predictRF, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictRF)$overall[1])
+rm(predictRF)
+
+```
+ 
+# Predicting The Manner of Exercise for Test Data Set
+
+apply the Random Forest model to the original testing data set downloaded from the data source. We remove the problem_id column first.
+
+```{r}
+rm(accuracy)
+rm(ose)
+predict(modelRF, testing[, -length(names(testing))])
+
+```
+
+# Generating Files to submit as answers for the Assignment
+
+Function to generate files with predictions to submit for assignment.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./Assignment_Solutions/problem_id_",i,".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+  }
+}
+```
+
+ Generating the Files.
+ 
+
+pml_write_files(predict(modelRF, testing[, -length(names(testing))]))
+rm(modelRF)
+rm(training)
+rm(testing)
+rm(validation)
+rm(pml_write_files)
+
+```
+ 
